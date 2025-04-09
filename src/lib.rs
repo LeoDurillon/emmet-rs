@@ -1,10 +1,24 @@
+use std::ffi::{c_char, CStr, CString};
+
 use statement::Statement;
 
 
 pub mod statement;
 
-fn start(input:&str) -> String {
-  Statement::new(input, None).parse()
+#[unsafe(no_mangle)]
+pub extern "C" fn expand(input:*const c_char) -> *const c_char {
+  let input = unsafe {match CStr::from_ptr(input).to_str() {
+    Ok(v)=>v,
+    Err(_) => panic!("Failed to parse value")
+  }};
+  let res = Statement::new(input, None).parse();
+  let string = CString::from_vec_with_nul(res.bytes().collect::<Vec<u8>>()).expect("Failed to parse String to CString");
+  string.as_ptr()
+}
+
+//Function for test purpose
+pub fn start(input:&str) -> String{
+  Statement::new(&input, None).parse()
 }
 
 
