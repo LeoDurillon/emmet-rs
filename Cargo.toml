@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "emmet_rs"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["cdylib"]
 
 [dependencies]
+napi = { version = "2", features = ["napi6"] }
+napi-derive = "2"

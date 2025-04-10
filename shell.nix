@@ -8,6 +8,7 @@ pkgs.mkShell {
     rustup
     cargo
     rustc
+    napi-rs-cli
   ];
 
   buildInputs = [
