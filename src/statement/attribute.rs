@@ -15,6 +15,9 @@ impl Attribute {
     self.value.len()
   }
 
+  /**
+   * Parse attribute to string based on attribute type
+   */
   pub fn parse(&self) -> String{
     match self.attribute_type {
       AttributeType::Text => format!(">{}",self.value),
@@ -53,15 +56,30 @@ pub struct AttributeGroup {
 }
 
 impl AttributeGroup {
+  /**
+   * Create a new attribute group from input
+   */
   pub fn new(input:String) -> Self {
-    let first_class = input.chars().enumerate().find(|(i,c)| c==&'.' && &input[i-1..*i] != "." && &input[i+1..*i+2] != "." ).unwrap_or((0,'a')).0;
+    // Search for first class definition
+    // Such as a '.' that is not in a props definition 
+    let first_class = input.chars().enumerate().find(|(i,c)| 
+      c==&'.' 
+      && !(input[0..*i].contains(":") && input[i+1..].contains("}")) // Check if item is variable call
+      && &input[i-1..*i] != "." && &input[i+1..i+2] != "." // Check for destructuration
+    ).unwrap_or((0,'a')).0;
+
     let first_prop = input.find(":").unwrap_or(0);
     let first_text = input.find("<").unwrap_or(0);
 
     let mut attributes:Vec<Attribute> = Vec::new();
+    // Get element in order of appearance
     let mut order = Vec::from([first_class,first_prop,first_text]);
     order.sort();
 
+    // For each item 
+    // Create attribute from index to next item index
+    // if item index = 0 attribute is not referenced in input
+    // Stop iteration after text as text could be anything
     for (index,item) in order.iter().enumerate() {
       if item == &0 {
         continue;
@@ -80,6 +98,9 @@ impl AttributeGroup {
     }
   }
 
+  /**
+   * Get total len of all attribute 
+  */ 
   pub fn len(&self) -> usize {
     if self.attributes.len() == 0 {
       return 0
@@ -87,6 +108,9 @@ impl AttributeGroup {
     self.attributes.iter().fold(self.attributes.len(),|acc,el| acc+el.len() )
   }
 
+  /**
+   * Check if text attribute exist in group
+   */
   pub fn has_text(&self) -> bool {
     match self.attributes.iter().find(|el| el.attribute_type == AttributeType::Text) {
       Some(_) => true,
@@ -94,6 +118,9 @@ impl AttributeGroup {
     }
   }
 
+  /**
+   * Parse all attribute and close tag based on tag type
+   */
   pub fn parse(&self,is_single:bool) -> Option<String>{
     if self.attributes.len() == 0 {
       return None
