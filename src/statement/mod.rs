@@ -3,6 +3,7 @@ use element::Element;
 
 pub mod element;
 pub mod attribute;
+pub mod snippets;
 
 pub struct Statement {
   value:String,
@@ -27,11 +28,23 @@ impl Statement {
       // proceed to find end of the group 
       // to create statement 
       Some(v) => {
+        if v == 0 {
+          let end = input.find(")").unwrap_or(input.len());
+          let multiplier =&input[end..];
+
+          return Self {
+            value: input[v+1..end].to_string(),
+            childs: Vec::from([Statement::new(&input[end+2..], Some(1), base_level)]),
+            base_level,
+            multiplier:if multiplier.starts_with("*") {multiplier[1..2].parse().unwrap_or(1)} else {1}
+          }
+        }
         let mut first_group_end = 0usize;
         // Update based on number of '(' vs number of ')' found
         let mut open_pool =1;
         let mut multiplier = 1;
-
+        // Added to end index if multiplier
+        let mut offset = 0;
         // Level is based on the current level of the statement 
         // + the number of parent before the group
         let level = input[0..v].chars().filter(|x| *x == '>').collect::<Vec<char>>().len() + base_level;
@@ -49,7 +62,17 @@ impl Statement {
                 // after '*' to get multiplier
                 // If fails to parse ignore '*'
                 if input[index+v+2..].contains("*") {
-                  multiplier = input[index+v+3..index+v+4].parse::<usize>().unwrap_or(1);
+                  multiplier =match input[index+v+3..index+v+4].parse::<usize>() {
+                    Ok(v)=>{
+                      offset = 2;
+                      v
+                    }
+                    Err(_)=>{
+                      offset = 1;
+                      1
+                    }
+                  }; 
+                
                 }
                 break;
               }
@@ -61,15 +84,14 @@ impl Statement {
 
         // Create a child based on collected input from group
         // Recursive call here
-        let mut childs = Vec::from([Statement::new(&input[v+1..first_group_end],Some(multiplier),level)]);
+        let mut childs = Vec::from([Statement::new( &input[v+1..first_group_end],Some(multiplier),level)]);
         
         // If input not finish after first group 
         // add another child containing rest of input
         // Recursive call here
-        if &input[first_group_end+3..].len() > &0usize {
-          childs.push(Statement::new(&input[first_group_end+2..],None,level));
+        if let Some(_) = &input.split_at_checked(first_group_end+offset+2) {
+          childs.push(Statement::new(&input[first_group_end+offset+2..],None,level));
         } 
-
         Self {
           value : input[0..v-1].to_string(),
           childs,
@@ -98,31 +120,12 @@ impl Statement {
   pub fn parse(&self) -> Result<String,Error> {
     // Get all levels of statement
     let mut statements = self.value.split(">").collect::<Vec<&str>>();
+    let mut times = 0;
     // Content of last loop result
     let mut elements:Vec<Element>=Vec::from([]);
 
-    // For all levels exept first
-    // Tries to parse every siblings group as elements
-    // Add content of last loop result to last tag of siblings groups
-    while statements.len() > 1 {
-      let level = statements.len()-1 + self.base_level;
-      let last = statements.pop().expect("Failed to get statement value");
-      let mut tags = parse_siblings(last);
-      let last_tag = tags.pop().expect("Failed to get tag value");
-      let mut element = Vec::from([Element::new(last_tag,elements,None,level )]);
-      let mut result =  tags.iter()
-      .map(|el| {
-        Element::new(el,vec![],None,level)
-      })
-      .collect::<Vec<Element>>();
-      
-      result.append(&mut element);
-      elements = Vec::from(result)
-        
-    }
-
     // Parse every childs of original statement
-    // To add them at the end of first element 
+    // To add them at the end of last element 
     let before_end = if self.childs.len() > 0  {
       Some(self.childs.iter().fold(
         String::new(), 
@@ -131,13 +134,34 @@ impl Statement {
     } else {
       None
     };
+    // For all levels exept first
+    // Tries to parse every siblings group as elements
+    // Add content of last loop result to last tag of siblings groups
+    while statements.len() > 1 {
+      let level = statements.len()-1 + self.base_level;
+      let last = statements.pop().expect("Failed to get statement value");
+      let mut tags = parse_siblings(last);
+      let last_tag = tags.pop().expect("Failed to get tag value");
+      let mut element = Vec::from([Element::new(last_tag,elements,if times ==0 {before_end.clone()} else {None},level )]);
+      let mut result =  tags.iter()
+      .map(|el| {
+        Element::new(el,vec![],None,level)
+      })
+      .collect::<Vec<Element>>();
+      
+      result.append(&mut element);
+      elements = Vec::from(result);
+      times += 1;
+    }
+
     // Tries to get first tag value
     let mut values =parse_siblings(statements.get(0).expect("Failed to get statement value"));
     let last_tag = values.pop().expect("Failed to get tag");
+    
     let last = Element::new(
       last_tag,
       elements,
-      before_end,
+      if times == 0  {before_end} else { None },
       self.base_level
     ).to_value();
     let others = values.iter().map(|el| Element::new(el,vec![],None,self.base_level).to_value()).collect::<Vec<String>>().join("\n");
