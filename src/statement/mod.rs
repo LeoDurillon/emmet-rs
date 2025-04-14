@@ -1,178 +1,188 @@
-use std::fmt::Error;
 use element::Element;
 
 pub mod element;
 pub mod attribute;
 pub mod snippets;
-
+#[derive(Clone, Debug)]
 pub struct Statement {
-  value:String,
-  childs:Vec<Statement>,
+  value:Element,
+  sibling:Option<Box<Statement>>,
   multiplier:usize,
-  base_level:usize
 }
 
 impl Statement {
-  /**
-   * Create a new statement from input
-   * Create childs based on groups
-   * Childs are statement such as first_group and content after first group
-   * Recursive function until end of input
-   */
-  pub fn new(input:&str,base_multiplier:Option<usize>,base_level:usize) -> Self{
-    // Get index of closest group entry    
-    let first_group_start = input.find('(');
-    
-    match first_group_start {
-      // Group entry exist then 
-      // proceed to find end of the group 
-      // to create statement 
-      Some(v) => {
-        if v == 0 {
-          let end = input.find(")").unwrap_or(input.len());
-          let multiplier =&input[end..];
+  pub fn new(input:&str,base_level:usize) -> Self {
+    let ((value,child,multiplier),sibling) = Self::parse_input(input);
 
-          return Self {
-            value: input[v+1..end].to_string(),
-            childs: Vec::from([Statement::new(&input[end+2..], Some(1), base_level)]),
-            base_level,
-            multiplier:if multiplier.starts_with("*") {multiplier[1..2].parse().unwrap_or(1)} else {1}
-          }
-        }
-        let mut first_group_end = 0usize;
-        // Update based on number of '(' vs number of ')' found
-        let mut open_pool =1;
-        let mut multiplier = 1;
-        // Added to end index if multiplier
-        let mut offset = 0;
-        // Level is based on the current level of the statement 
-        // + the number of parent before the group
-        let level = input[0..v].chars().filter(|x| *x == '>').collect::<Vec<char>>().len() + base_level;
-        
-        // Iter over chars of input after group entry
-        // Update open_pool until open_pool = 0
-        for (index,char) in input[v+1..].chars().enumerate() {
-          match char {
-            '(' => open_pool += 1,
-            ')' => {
-              open_pool -= 1;
-              if open_pool == 0 {
-                first_group_end = index+v+1;
-                // If input has a '*' tries to parse number 
-                // after '*' to get multiplier
-                // If fails to parse ignore '*'
-                if input[index+v+2..].contains("*") {
-                  multiplier =match input[index+v+3..index+v+4].parse::<usize>() {
-                    Ok(v)=>{
-                      offset = 2;
-                      v
-                    }
-                    Err(_)=>{
-                      offset = 1;
-                      1
-                    }
-                  }; 
-                
-                }
-                break;
-              }
-              continue;
-            }
-            _ => continue
-          }
-        }
+    let element = Element::new(
+      value.to_string(), 
+      if child.len() > 0 {Some(Statement::new(child,base_level+1))} 
+      else {None}, 
+      base_level
+    );
 
-        // Create a child based on collected input from group
-        // Recursive call here
-        let mut childs = Vec::from([Statement::new( &input[v+1..first_group_end],Some(multiplier),level)]);
-        
-        // If input not finish after first group 
-        // add another child containing rest of input
-        // Recursive call here
-        if let Some(_) = &input.split_at_checked(first_group_end+offset+2) {
-          childs.push(Statement::new(&input[first_group_end+offset+2..],None,level));
-        } 
-        Self {
-          value : input[0..v-1].to_string(),
-          childs,
-          multiplier:base_multiplier.unwrap_or(1),
-          base_level
-        }
-      }
-      //If no group found create a statement without child
-      None => {
-        Self{
-          value:input.to_string(),
-          childs:vec![],
-          multiplier:base_multiplier.unwrap_or(1),
-          base_level
-        }
-      }
+    let siblings = if sibling.len() > 0 {Some(Box::new(Statement::new(sibling,base_level)))} else {None};
+
+    Self {
+      value:element,
+      sibling:siblings,
+      multiplier
     }
   }
 
+  /**
+   * Parse input to get :
+   * element of actual statement
+   * childs of element
+   * siblings of element
+   * multiplier of element
+   * return ((element,childs,multiplier),siblings)
+   */
+  fn parse_input(input:&str) -> ((&str,&str,usize),&str) {
+
+    let first_down = input.split_at(input.find(">").unwrap_or(input.len()));
+    let first_sibling = input.split_at(input.find("+").unwrap_or(input.len()));
+    let first_opening =input.split_at(input.find("(").unwrap_or(input.len()));
+    let mut multiplier = 1;
+  
+    let mut order = [first_down.0.len(),first_sibling.0.len(),first_opening.0.len()];
+    order.sort();
+    
+    let first = order.get(0).unwrap();
+    if first == &first_down.0.len() {
+      let element = first_down.0;
+      if element.contains("*") {
+        multiplier = element.split_at(element.find("*").unwrap_or(0)+1).1.parse::<usize>().unwrap_or(1);
+      }
+      if first_down.0.len() < input.len() {
+        return ((element.split_at(element.find("*").unwrap_or(element.len())).0,&input[first_down.0.len()+1..],multiplier),"")
+      } else {
+        return ((element.split_at(element.find("*").unwrap_or(element.len())).0,"",multiplier),"")
+      }
+    }
+  
+    if first == &first_sibling.0.len() {
+      let element = first_sibling.0;
+      if element.contains("*") {
+        multiplier = element.split_at(element.find("*").unwrap_or(0)+1).1.parse::<usize>().unwrap_or(1);
+      }
+      return ((element.split_at(element.find("*").unwrap_or(element.len())).0,"",multiplier), &first_sibling.1[1..])
+    }
+  
+    if first == &first_opening.0.len() {
+      let closing = Self::find_closing_index(&input[first_opening.0.len()+1..]);
+      let first_down = input[first_opening.0.len()..].split_at(input.find(">").unwrap_or(input.len()));
+      let first_sibling = input[first_opening.0.len()..].split_at(input.find("+").unwrap_or(input.len()));
+      let mut inner_order = [first_down.0.len(),first_sibling.0.len()];
+      inner_order.sort();
+      if input[closing..].find("*").unwrap_or(input.len()) < input[closing..].find("+").unwrap_or(input.len())  {
+        multiplier = input[closing..][input[closing..].find('*').unwrap_or(0)+1..input[closing..].find('+').unwrap_or(input[closing..].len())].to_string().parse::<usize>().unwrap_or(1)
+        
+      }
+  
+      let inner_first = inner_order.get(0).unwrap();
+      if inner_first == &first_down.0.len() {
+        return ((&first_down.0[first_opening.0.len()+1..],&input[first_opening.0.len() + first_down.0.len()+1..closing+1],multiplier), &input[closing..].split_at(input[closing..].find("+").unwrap_or(input[closing+1..].len())+1).1)
+      }
+    
+      if inner_first == &first_sibling.0.len() {
+        return ((&first_sibling.0[first_opening.0.len()+1..closing+1],"",multiplier), &first_sibling.1[1..])
+      }
+    }
+  
+    return ((input,"",multiplier),"")
+  }
 
   /**
-   * Parse value of statement into multiple element
-   * then parse the value of eache element to
-   * get final snippet value
+   * Get index of current parentheses closing
    */
-  pub fn parse(&self) -> Result<String,Error> {
-    // Get all levels of statement
-    let mut statements = self.value.split(">").collect::<Vec<&str>>();
-    let mut times = 0;
-    // Content of last loop result
-    let mut elements:Vec<Element>=Vec::from([]);
+  fn find_closing_index(input:&str) -> usize{
+    let mut opening_dif=1;
+    let mut result = input.len();
+    for (index,char) in input.chars().enumerate() {
+      match char {
+        '(' =>{
+          opening_dif+=1;
+        }
+        ')' =>{
+          if opening_dif == 1 {
+            result = index;
+            break;
+          }
+          opening_dif-=1;
+        }
+        _=>{}
+      }
+    }
+  
+    result
+  }
 
-    // Parse every childs of original statement
-    // To add them at the end of last element 
-    let before_end = if self.childs.len() > 0  {
-      Some(self.childs.iter().fold(
-        String::new(), 
-        |acc,el| {format!("{}\n{}",acc,el.parse().expect("Failed to parse")) }
-      ))
-    } else {
-      None
-    };
-    // For all levels exept first
-    // Tries to parse every siblings group as elements
-    // Add content of last loop result to last tag of siblings groups
-    while statements.len() > 1 {
-      let level = statements.len()-1 + self.base_level;
-      let last = statements.pop().expect("Failed to get statement value");
-      let mut tags = parse_siblings(last);
-      let last_tag = tags.pop().expect("Failed to get tag value");
-      let mut element = Vec::from([Element::new(last_tag,elements,if times ==0 {before_end.clone()} else {None},level )]);
-      let mut result =  tags.iter()
-      .map(|el| {
-        Element::new(el,vec![],None,level)
-      })
-      .collect::<Vec<Element>>();
-      
-      result.append(&mut element);
-      elements = Vec::from(result);
-      times += 1;
+  /**
+   * Parse statement into final snippet value
+   */
+  pub fn parse(&self) -> String {
+    let mut result = self.value.to_value();
+    for _ in 1..self.multiplier {
+      result = format!("{}\n{}",result,self.value.to_value());
     }
 
-    // Tries to get first tag value
-    let mut values =parse_siblings(statements.get(0).expect("Failed to get statement value"));
-    let last_tag = values.pop().expect("Failed to get tag");
-    
-    let last = Element::new(
-      last_tag,
-      elements,
-      if times == 0  {before_end} else { None },
-      self.base_level
-    ).to_value();
-    let others = values.iter().map(|el| Element::new(el,vec![],None,self.base_level).to_value()).collect::<Vec<String>>().join("\n");
-    let others = if others.len() > 0 { format!("{}{}",others,"\n")} else { String::new()};
-    Ok(
-      vec![format!("{}{}",others,last);self.multiplier].join("\n")
-  )
+    match &self.sibling {
+      Some(v)=>{
+        return format!("{}\n{}",result,v.parse())
+      }
+      None => {
+        return result
+      }
+    }
   }
 }
 
 
-fn parse_siblings(statement:&str) -> Vec<&str> {
-  statement.split("+").collect::<Vec<&str>>()
+
+
+
+
+#[cfg(test)]
+mod test {
+    use crate::statement::Statement;
+
+  #[test]
+  fn test_parser() {
+    let expected = (("html","",1),"");
+    assert_eq!(expected,Statement::parse_input("html"));
+
+    let expected = (("html","",3),"");
+    assert_eq!(expected,Statement::parse_input("html*3"));
+
+    let expected = (("html","p",1),"");
+    assert_eq!(expected,Statement::parse_input("html>p"));
+
+    let expected = (("html","",1),"p");
+    assert_eq!(expected,Statement::parse_input("html+p"));
+
+    let expected = (("html","",1),"div>p+icon");
+    assert_eq!(expected,Statement::parse_input("html+div>p+icon"));
+
+    let expected = (("html","div>p+icon",1),"");
+    assert_eq!(expected,Statement::parse_input("html>div>p+icon"));
+
+    let expected = (("html","div>p",1),"icon");
+    assert_eq!(expected,Statement::parse_input("(html>div>p)+icon"));
+
+    let expected = (("html","",1),"icon");
+    assert_eq!(expected,Statement::parse_input("(html)+icon"));
+
+    let expected = (("html","div>(p+div>p)",1),"icon");
+    assert_eq!(expected,Statement::parse_input("(html>div>(p+div>p))+icon"));
+
+    let expected = (("html.test.class","div:test:prop>(p+div>p)",3),"icon>p");
+    assert_eq!(expected,Statement::parse_input("(html.test.class>div:test:prop>(p+div>p))*3+icon>p"));
+    
+    let expected = (("html","(div>p)*3",1),"");
+    assert_eq!(expected,Statement::parse_input("html>(div>p)*3"));
+  
+    let expected = (("div","p",3),"");
+    assert_eq!(expected,Statement::parse_input("(div>p)*3"));
+  }
 }
