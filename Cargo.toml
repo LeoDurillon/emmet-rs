@@ -8,5 +8,3 @@ path = "src/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "2", features = ["napi6"] }
-napi-derive = "2"
