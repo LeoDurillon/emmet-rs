@@ -93,5 +93,7 @@ mod checker_test {
     assert_eq!(true,input_correctly_structured("div+("));
 
     assert_eq!(false,input_correctly_structured("div > p"));
+
+    assert_eq!(false,input_correctly_structured("div>(p*3<My text)"))
   }
 }
