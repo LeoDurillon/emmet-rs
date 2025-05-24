@@ -15,6 +15,30 @@ impl Attribute {
     self.value.len()
   }
 
+  fn get_props(&self)->Vec<&str> {
+    let mut result:Vec<&str> = Vec::new();
+    let mut opening_dif = 0; 
+    let mut last_index = 0;
+    for (index,char) in self.value.chars().enumerate() {
+      match char {
+        '{'=>{
+          opening_dif+=1;
+        }
+        '}'=>{
+          opening_dif-=1;
+        }
+        ':'=>{
+          if opening_dif == 0 {
+            result.push(&self.value[last_index..index]);
+            last_index = index+1;
+          }
+        }
+         _=>{}
+      }
+    }
+    result.push(&self.value[last_index..]);
+    result
+  }
   /**
    * Parse attribute to string based on attribute type
    */
@@ -26,27 +50,27 @@ impl Attribute {
         format!(" class=\"{}\"",result.join(" "))
       },
       AttributeType::Props => {
-        let splitted = self.value.split(":").collect::<Vec<&str>>();
+        let props = self.get_props();
         let mut result = Vec::new();
 
-        for (index ,props) in splitted.iter().enumerate() {
-          if let Some(_) = splitted[index+1..].iter().find(|x| x.starts_with(&props.split_at(props.find("=").unwrap_or(props.len()-1)+1).0)) {
+        for prop in props.iter() {
+          if  props.iter().any(|el| el.split("=").collect::<Vec<&str>>().get(0).unwrap().contains(prop) && el.len() > prop.len()) {
             continue;
           }
-          match props.contains("=") {
+          match prop.contains("=") {
             true => {
-              let (prop,value)= props.split_at(props.find("=").unwrap()+1);
+              let (name,value)= prop.split_at(prop.find("=").unwrap()+1);
           
               match value.contains("{") {
-                true=> result.push(format!(" {}{}",prop,value)),
-                _=>result.push(format!(" {}\"{}\"",prop,value))
+                true=> result.push(format!(" {}{}",name,value)),
+                _=>result.push(format!(" {}\"{}\"",name,value))
               }
             } 
             _ => {
-              if props.starts_with("{") || props.ends_with(";") {
-                result.push(format!(" {}",if props.ends_with(";") {&props[0..props.len()-1]} else {props}))
+              if prop.starts_with("{") || prop.ends_with(";") {
+                result.push(format!(" {}",if prop.ends_with(";") {&prop[0..prop.len()-1]} else {prop}))
               }else {
-                result.push(format!(" {}=${{1}}",props))
+                result.push(format!(" {}=${{1}}",prop))
               }
             }
           }
@@ -97,11 +121,17 @@ impl AttributeGroup {
         None => continue,
         Some(v) => {
           if item == &first_text {
-            attributes.push(Attribute {value:input[v+1..].to_string(), attribute_type:AttributeType::Text});
+            attributes.push(Attribute {
+              value:input[v+1..].to_string(), 
+              attribute_type:AttributeType::Text
+            });
             break;
           }
     
-          attributes.push(Attribute {value:input[v+1..order.get(index+1).unwrap_or(&Some(input.len())).unwrap()].to_string(), attribute_type:if item == &first_class {AttributeType::Class} else {AttributeType::Props}})
+          attributes.push(Attribute {
+            value:input[v+1..order.get(index+1).unwrap_or(&Some(input.len())).unwrap()].to_string(), 
+            attribute_type:if item == &first_class {AttributeType::Class} else {AttributeType::Props}
+          })
         }
       }
 

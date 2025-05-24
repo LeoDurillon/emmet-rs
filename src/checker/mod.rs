@@ -33,7 +33,7 @@ pub fn input_correctly_close(input:&str) -> bool {
 }
 
 pub fn input_correctly_structured(input:&str) -> bool {
-  let regex:Regex = Regex::new(r"^(?:\(?[>+]?[a-zA-Z]+[.>:+]?(?:=(?:\{[a-zA-Z]+\}|[a-zA-Z]+))?\(?(?:<[\w ]+)?\)*(?:\*\d+)?)+$").unwrap();
+  let regex:Regex = Regex::new(r"^(?:\(?[>+]?[a-zA-Z]+[.>:+]?(?:=(?:\{.+\}|[\w]+))?\(?(?:<[\w ]+)?\)*(?:\*\d+)?)+$").unwrap();
 
   regex.is_match(input)
 }
